@@ -92,7 +92,7 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions"/>
     <application
-        android:label="Kiosk Satellite"
+        android:label="kiosk-satellite-geckoview"
         android:name=".KioskApplication"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"

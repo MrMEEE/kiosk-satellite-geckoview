@@ -37,7 +37,7 @@
 const CFG = window.__ksCameraView || { cameras: [], showCameraNames: true };
 const grid = document.getElementById('grid');
 const bridge = (name, value) =>
-  window.flutter_inappwebview.callHandler(name, value);
+  window.kiosk_geckoview.callHandler(name, value);
 const sessions = new Map();
 let focusId = CFG.focusedCameraId || null;
 let swipeStart = null;

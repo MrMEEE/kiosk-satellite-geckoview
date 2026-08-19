@@ -90,7 +90,7 @@ void main() {
   // The native visibility switch, mocked at the platform channel: what the
   // Dart side actually asks of it per screensaver mode (issue #82).
   group('with a dashboard loaded', () {
-    const channel = MethodChannel('kiosk_satellite/webview_freeze');
+    const channel = MethodChannel('kiosk_satellite/geckoview_freeze');
     late List<MethodCall> calls;
 
     setUp(() {

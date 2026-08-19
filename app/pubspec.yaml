@@ -2,7 +2,7 @@ name: kiosk_satellite
 description: "Modern kiosk browser for Home Assistant — companion app for Voice Satellite."
 publish_to: 'none'
 
-version: 2026.8.59+150
+version: 1.0.0+1
 
 environment:
   sdk: ^3.12.2
@@ -12,9 +12,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
-  # WebView + JS bridge. Beta needed: 6.1.x's Android gradle file is
-  # incompatible with the AGP 9 the current Flutter template uses.
-  flutter_inappwebview: ^6.2.0-beta.3
+  # GeckoView-backed engine plugin.
+  kiosk_geckoview:
+    path: plugins/kiosk_geckoview
 
   # Screen / device
   screen_brightness: ^2.1.0

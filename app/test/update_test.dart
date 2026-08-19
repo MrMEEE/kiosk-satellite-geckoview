@@ -74,7 +74,7 @@ void main() {
       return needsConfirm ? 'confirm' : 'silent';
     });
     PackageInfo.setMockInitialValues(
-      appName: 'Kiosk Satellite',
+      appName: 'kiosk-satellite-geckoview',
       packageName: 'me.jxl.kiosk_satellite',
       version: '1.0.0',
       buildNumber: '1',

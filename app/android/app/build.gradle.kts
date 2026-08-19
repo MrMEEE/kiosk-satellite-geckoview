@@ -35,8 +35,8 @@ android {
         applicationId = "me.jxl.kiosk_satellite"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // onnxruntime AAR requires API 24+; also fine for kiosk tablets.
-        minSdk = maxOf(24, flutter.minSdkVersion)
+        // GeckoView requires API 26+; API 27 devices remain fully supported.
+        minSdk = maxOf(26, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -102,6 +102,9 @@ flutter {
 }
 
 dependencies {
+    val geckoViewVersion = "153.0.20260715202819"
+    implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
+
     // CameraX for low-cost motion detection (YUV luminance analysis only).
     // Ceiling: 1.5.x is the last line whose Camera2Config is the legacy
     // camera2 backend. 1.6.0 replaced it with camera-pipe (CXCP) with no

@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 /// the screensaver's own media WebView and rotation overlays are never
 /// touched.
 class WebViewFreeze {
-  static const _channel = MethodChannel('kiosk_satellite/webview_freeze');
+  static const _channel = MethodChannel('kiosk_satellite/geckoview_freeze');
 
   /// Returns how many WebViews were switched. 0 means the dashboard view was
   /// not found (no Activity, mid-rebuild, or the page not loaded yet) — the

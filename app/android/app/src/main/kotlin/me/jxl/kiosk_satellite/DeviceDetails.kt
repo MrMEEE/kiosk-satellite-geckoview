@@ -22,6 +22,7 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import org.mozilla.geckoview.BuildConfig as GeckoBuildConfig
 import java.io.File
 import java.net.NetworkInterface
 import java.nio.ByteBuffer
@@ -626,14 +627,13 @@ class DeviceDetails(
     private fun readLong(file: File): Long? = readText(file)?.toLongOrNull()
 
     /** The WebView implementation actually in use — the thing rendering the card. */
+    /** The GeckoView runtime actually in use — the thing rendering the card. */
     private fun webview(): Map<String, Any?> {
         return try {
-            val pkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                android.webkit.WebView.getCurrentWebViewPackage()
-            } else {
-                null
-            }
-            mapOf("package" to pkg?.packageName, "version" to pkg?.versionName)
+            mapOf(
+                "package" to GeckoBuildConfig.LIBRARY_PACKAGE_NAME,
+                "version" to GeckoBuildConfig.MOZ_APP_VERSION,
+            )
         } catch (e: Exception) {
             mapOf("package" to null, "version" to null)
         }

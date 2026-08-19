@@ -18,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const freezeChannel = MethodChannel('kiosk_satellite/webview_freeze');
+  const freezeChannel = MethodChannel('kiosk_satellite/geckoview_freeze');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 

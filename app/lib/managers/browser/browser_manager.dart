@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../../web_engine/web_engine_compat.dart';
 
 import 'no_cache_script.dart';
 import 'visibility_mask_script.dart';

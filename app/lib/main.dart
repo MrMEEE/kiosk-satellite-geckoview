@@ -220,7 +220,7 @@ class _KioskSatelliteAppState extends State<KioskSatelliteApp>
     final container = widget.container;
     final configured = container.settings.get(defs.startUrl).isNotEmpty;
     return MaterialApp(
-      title: 'Kiosk Satellite',
+      title: 'kiosk-satellite-geckoview',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),

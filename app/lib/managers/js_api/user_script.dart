@@ -1,5 +1,5 @@
 /// The `window.kioskSatellite` facade injected into every page at document
-/// start. Pages never touch the flutter_inappwebview transport directly.
+/// start. Pages never touch the native bridge transport directly.
 ///
 /// Contract: docs/js-api.md. All methods return promises; queries resolve
 /// null on failure, commands resolve false — never reject.
@@ -10,7 +10,7 @@ String buildKioskSatelliteScript({required String version, required String os}) 
 
   function call(method, params) {
     try {
-      return window.flutter_inappwebview
+      return window.kiosk_geckoview
         .callHandler('ksApi', method, params || {})
         .catch(function () { return null; });
     } catch (e) {

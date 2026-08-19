@@ -53,7 +53,7 @@ const content = document.getElementById('content');
 const msgEl = document.getElementById('msg');
 
 const bridge = (name, arg) => {
-  try { window.flutter_inappwebview?.callHandler(name, arg); } catch (_) {}
+  try { window.kiosk_geckoview?.callHandler(name, arg); } catch (_) {}
 };
 const log = (m) => bridge('log', String(m));
 const msg = (m) => { msgEl.textContent = m || ''; };

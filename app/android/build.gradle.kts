@@ -2,6 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven("https://maven.mozilla.org/maven2/")
     }
     // Keep CameraX on the legacy camera2 backend everywhere. Plugins pull
     // 1.6.x (mobile_scanner asks for 1.6.1), whose Camera2Config is the

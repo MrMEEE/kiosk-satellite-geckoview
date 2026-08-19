@@ -148,11 +148,11 @@ const pullToRefreshProbeScript = '''
     if (armY !== null && !fired && travel >= THRESHOLD) {
       fired = true;
       spin();
-      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      if (window.kiosk_geckoview && window.kiosk_geckoview.callHandler) {
         // The reply says whether the app acted. A declined pull (setting
         // off, or a refresh already in flight) retracts; an accepted one
         // spins until the reload replaces the document.
-        window.flutter_inappwebview.callHandler('ksPullToRefresh').then(
+        window.kiosk_geckoview.callHandler('ksPullToRefresh').then(
           function (accepted) { if (!accepted) { fired = false; disarm(); } },
           function () { fired = false; disarm(); }
         );

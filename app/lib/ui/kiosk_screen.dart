@@ -3,12 +3,12 @@ import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/permissions.dart';
 
 import '../app_container.dart';
+import '../web_engine/web_engine_compat.dart';
 import 'screensaver_view.dart';
 import '../core/events.dart';
 import '../managers/browser/carousel_script.dart';
@@ -1169,22 +1169,24 @@ class _KioskScreenState extends State<KioskScreen>
     shouldOverrideUrlLoading: (controller, action) async {
       final url = action.request.url;
       if (url == null) return NavigationActionPolicy.ALLOW;
+      final navUri = Uri.tryParse(url.toString());
+      if (navUri == null) return NavigationActionPolicy.ALLOW;
       // A link leaving the dashboard's origin must not replace the dashboard
       // page: pagehide would tear down the Voice Satellite session, and the
       // wake word and the device's HA entities die with it (issue #86). The
       // tap gets the same fullscreen page on the rotation overlay instead,
       // with the dashboard alive underneath. Subframes stay untouched, and
       // programmatic loads (the loadUrl command) never pass through here.
-      if ((url.scheme == 'http' || url.scheme == 'https') &&
+      if ((navUri.scheme == 'http' || navUri.scheme == 'https') &&
           action.isForMainFrame &&
-          !c.browser.isDashboardOrigin(url)) {
-        c.browser.showLinkOverlay(url.toString());
+          !c.browser.isDashboardOrigin(navUri)) {
+        c.browser.showLinkOverlay(navUri.toString());
         return NavigationActionPolicy.CANCEL;
       }
-      if (url.scheme != 'app') {
+      if (navUri.scheme != 'app') {
         return NavigationActionPolicy.ALLOW;
       }
-      final package = appLinkPackage(url.toString());
+      final package = appLinkPackage(navUri.toString());
       if (package == null) {
         // Ours by scheme but not a package name: cancel anyway, or Chromium
         // shows its own error page over the dashboard.
@@ -1225,6 +1227,7 @@ class _KioskScreenState extends State<KioskScreen>
         callback: (args) {
           final active = args.isNotEmpty && args.first == true;
           unawaited(c.browser.setDragScrollBars(hidden: active));
+          return null;
         },
       );
       // Touch feedback: one message per accepted tap or slider step (see
@@ -1253,6 +1256,7 @@ class _KioskScreenState extends State<KioskScreen>
               TapSound.tap(volume: volume);
             }
           }
+          return null;
         },
       );
     },
@@ -1318,12 +1322,14 @@ class _KioskScreenState extends State<KioskScreen>
       // Hand downloads to the system DownloadManager. Feedback is in-app
       // snackbars (started / done with an Open action): the kiosk hides the
       // status bar, so the DownloadManager notification is never seen.
+      final requestUrl = request.url;
+      if (requestUrl == null) return null;
       var name = request.suggestedFilename;
       if (name == null || name.isEmpty) {
-        final segs = request.url.pathSegments.where((s) => s.isNotEmpty);
+        final segs = requestUrl.pathSegments.where((s) => s.isNotEmpty);
         name = segs.isEmpty ? 'download' : segs.last;
       }
-      c.browser.log.info('browser', 'downloading $name (${request.url})');
+      c.browser.log.info('browser', 'downloading $name ($requestUrl)');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1334,7 +1340,7 @@ class _KioskScreenState extends State<KioskScreen>
         );
       }
       await BackgroundListening.download(
-        url: request.url.toString(),
+        url: requestUrl.toString(),
         filename: name,
         userAgent: request.userAgent,
         mimeType: request.mimeType,

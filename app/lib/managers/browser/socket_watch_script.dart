@@ -29,7 +29,7 @@ const haSocketWatchScript = '''
         S.closes++;
         S.lastAt = Date.now();
         try {
-          window.flutter_inappwebview.callHandler('ksHaSocketClosed');
+          window.kiosk_geckoview.callHandler('ksHaSocketClosed');
         } catch (e) {}
       });
     }

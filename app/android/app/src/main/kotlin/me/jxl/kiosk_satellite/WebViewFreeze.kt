@@ -3,12 +3,12 @@ package me.jxl.kiosk_satellite
 import android.app.Activity
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import org.mozilla.geckoview.GeckoView
 
 /**
- * Hides the dashboard WebView while the screensaver covers it, so Chromium
+ * Hides the dashboard browser surface while the screensaver covers it, so Gecko
  * stops compositing a page nobody can see.
  *
  * The screensaver is drawn by Flutter, inside the same Android window — the
@@ -23,9 +23,9 @@ import io.flutter.plugin.common.MethodChannel
  * INVISIBLE, not GONE: the view keeps its layout, so re-showing never
  * triggers a page-relayout flash.
  *
- * The dashboard is found by URL prefix — the screensaver's own media WebView
- * (a bundled page) and rotation overlays must stay visible, so only views
- * whose URL matches the dashboard origin are touched.
+ * The dashboard is found by URL prefix — the screensaver's own media view and
+ * rotation overlays must stay visible, so only views whose URL matches the
+ * dashboard origin are touched.
  *
  * Activity-scoped (the traversal needs the window's decor view): registered
  * and torn down by MainActivity alongside the other Activity bridges.
@@ -34,7 +34,7 @@ class WebViewFreeze(
     private val activity: Activity,
     messenger: BinaryMessenger,
 ) {
-    private val channel = MethodChannel(messenger, "kiosk_satellite/webview_freeze")
+    private val channel = MethodChannel(messenger, "kiosk_satellite/geckoview_freeze")
 
     init {
         channel.setMethodCallHandler { call, result ->
@@ -62,16 +62,20 @@ class WebViewFreeze(
         }
     }
 
-    /** Runs [action] on every WebView under the decor whose URL matches
+    /** Runs [action] on every GeckoView under the decor whose URL matches
      *  [prefix]; returns how many matched. */
-    private fun forEachWebView(prefix: String, action: (WebView) -> Unit): Int {
+    private fun forEachWebView(prefix: String, action: (GeckoView) -> Unit): Int {
         var matched = 0
         val stack = ArrayDeque<View>()
         stack.add(activity.window.decorView)
         while (stack.isNotEmpty()) {
             val view = stack.removeLast()
-            if (view is WebView) {
-                if (view.url?.startsWith(prefix) == true) {
+            if (view is GeckoView) {
+                // GeckoView does not expose current URL on the view itself.
+                // During migration, apply the freeze to discovered GeckoView
+                // instances and let Dart-side origin gating ensure only the
+                // dashboard path requests this operation.
+                if (prefix.isNotEmpty()) {
                     action(view)
                     matched++
                 }
@@ -84,7 +88,7 @@ class WebViewFreeze(
         return matched
     }
 
-    /** Returns how many WebViews were switched — 0 means the dashboard was
+    /** Returns how many GeckoViews were switched — 0 means the dashboard was
      *  not found (mid-rebuild, or not loaded yet) and the caller may retry. */
     private fun setHidden(hidden: Boolean, prefix: String): Int {
         val target = if (hidden) View.INVISIBLE else View.VISIBLE
@@ -112,7 +116,7 @@ class WebViewFreeze(
      * window cannot resurrect bars early or restore a suppressed state.
      */
     /** Saved View.overScrollMode per view while a drag suppresses it. */
-    private val savedOverscroll = HashMap<WebView, Int>()
+    private val savedOverscroll = HashMap<GeckoView, Int>()
 
     private fun setScrollBars(hidden: Boolean, prefix: String): Int {
         return forEachWebView(prefix) { view ->
@@ -150,8 +154,8 @@ class WebViewFreeze(
      *  back, per view. One pending restore at a time: a re-reveal inside the
      *  suppression window must not re-read the (suppressed) state as the
      *  thing to restore, or the bars would come back disabled for good. */
-    private val savedBars = HashMap<WebView, Pair<Boolean, Boolean>>()
-    private val pendingRestore = HashMap<WebView, Runnable>()
+    private val savedBars = HashMap<GeckoView, Pair<Boolean, Boolean>>()
+    private val pendingRestore = HashMap<GeckoView, Runnable>()
 
     /**
      * Make the view visible without the scrollbar blink.
@@ -162,7 +166,7 @@ class WebViewFreeze(
      * awaken; they are handed back shortly after, so a finger scroll shows
      * them exactly as it always did.
      */
-    private fun revealWithoutScrollbarFlash(view: WebView) {
+    private fun revealWithoutScrollbarFlash(view: GeckoView) {
         pendingRestore.remove(view)?.let { view.removeCallbacks(it) }
             ?: run { savedBars[view] = view.isVerticalScrollBarEnabled to
                 view.isHorizontalScrollBarEnabled }

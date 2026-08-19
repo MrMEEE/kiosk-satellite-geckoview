@@ -1,18 +1,16 @@
 name: Release
 
-# Publishing a GitHub release builds the signed APK and attaches it.
-# The app version comes from the tag (v1.2.3 becomes 1.2.3), so a release can never disagree with
-# what the app reports about itself.
+# Pushing a semantic version tag (v1.2.3) builds the signed APK and publishes
+# a GitHub release for that same tag. The app version comes from the tag, so a
+# release can never disagree with what the app reports about itself.
 #
-# Manual fallback for when GitHub drops the release event (it happened during
-# the 2026-08-06 Actions outage): dispatch the workflow ON THE TAG REF and it
-# behaves identically, because GITHUB_REF_NAME is the tag either way:
-#   gh workflow run release.yml --ref <tag>
-# The release (draft or published) must already exist for the upload step.
+# Manual fallback: dispatch the workflow ON THE TAG REF, e.g.
+#   gh workflow run release.yml --ref v1.2.3
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -53,6 +51,10 @@ jobs:
       - name: Build the signed APK
         working-directory: app
         run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a semantic version tag like v1.0.0, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
           VERSION="${GITHUB_REF_NAME#v}"
           # The build number comes from pubspec.yaml, NOT the workflow run
           # counter: dev builds side-loaded during testing carry the pubspec
@@ -64,11 +66,20 @@ jobs:
             --build-name="$VERSION" \
             --build-number="$BUILD_NUMBER"
           mv build/app/outputs/flutter-apk/app-release.apk \
-             "kiosk-satellite-${GITHUB_REF_NAME}.apk"
+             "kiosk-satellite-geckoview-${GITHUB_REF_NAME}.apk"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
 
       - name: Attach the APK to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            "app/kiosk-satellite-${GITHUB_REF_NAME}.apk" --clobber
+            "app/kiosk-satellite-geckoview-${GITHUB_REF_NAME}.apk" --clobber

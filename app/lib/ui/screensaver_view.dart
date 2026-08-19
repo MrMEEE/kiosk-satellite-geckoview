@@ -7,7 +7,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:video_player/video_player.dart';
 
@@ -15,6 +14,7 @@ import '../app_container.dart';
 import '../core/events.dart';
 import '../core/image_orientation.dart';
 import '../core/locale_dates.dart';
+import '../web_engine/web_engine_compat.dart';
 import '../managers/browser/ha_session_script.dart';
 import '../managers/browser/vs_suppress_script.dart';
 import '../managers/home_assistant/kiosk_mode.dart';
@@ -1282,8 +1282,8 @@ class _ScreensaverWebViewState extends State<ScreensaverWebView> {
   /// its content in its own iframes) still dismisses.
   static const _dismissScript = '''
 document.addEventListener('pointerdown', function () {
-  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-    window.flutter_inappwebview.callHandler('dismiss');
+  if (window.kiosk_geckoview && window.kiosk_geckoview.callHandler) {
+    window.kiosk_geckoview.callHandler('dismiss');
   }
 }, true);''';
 

@@ -96,8 +96,8 @@ const buttonHapticsScript = '''
 
   function send(kind) {
     try {
-      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('ksHaptic', kind);
+      if (window.kiosk_geckoview && window.kiosk_geckoview.callHandler) {
+        window.kiosk_geckoview.callHandler('ksHaptic', kind);
       }
     } catch (_) {}
   }

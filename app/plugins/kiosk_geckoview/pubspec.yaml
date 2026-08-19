@@ -1,0 +1,19 @@
+name: kiosk_geckoview
+description: GeckoView-backed web engine plugin for kiosk_satellite.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.kiosksatellite.geckoview
+        pluginClass: KioskGeckoViewPlugin

@@ -1,0 +1,53 @@
+group = 'com.kiosksatellite.geckoview'
+version = '1.0-SNAPSHOT'
+
+buildscript {
+    ext.kotlin_version = '2.2.0'
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url 'https://maven.mozilla.org/maven2/'
+        }
+    }
+
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.12.1"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url 'https://maven.mozilla.org/maven2/'
+        }
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace = 'com.kiosksatellite.geckoview'
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+}
+
+dependencies {
+    implementation 'org.mozilla.geckoview:geckoview:153.0.20260715202819'
+}

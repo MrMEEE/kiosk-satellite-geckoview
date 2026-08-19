@@ -138,7 +138,7 @@ class AppLauncherManager extends Manager with WidgetsBindingObserver {
               AppLifecycleState.resumed;
           return CommandResult.ok({
             'package': resumed ? 'me.jxl.kiosk_satellite' : null,
-            'label': resumed ? 'Kiosk Satellite' : null,
+            'label': resumed ? 'kiosk-satellite-geckoview' : null,
           });
         },
       ),

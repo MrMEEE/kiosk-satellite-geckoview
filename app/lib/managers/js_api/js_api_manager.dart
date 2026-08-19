@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../../web_engine/web_engine_compat.dart';
 
 import '../../core/command_registry.dart';
 import '../../core/events.dart';

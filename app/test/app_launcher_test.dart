@@ -172,7 +172,7 @@ void main() {
       final result =
           await launcher.commands.execute('foregroundApp', const {});
       expect((result.data as Map)['package'], 'me.jxl.kiosk_satellite');
-      expect((result.data as Map)['label'], 'Kiosk Satellite');
+      expect((result.data as Map)['label'], 'kiosk-satellite-geckoview');
     });
 
     test('answers an honest null while another app is up without the grant',

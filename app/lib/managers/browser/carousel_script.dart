@@ -269,8 +269,8 @@ const dashboardCarouselScript = '''
   // scroll. Idempotent both ways.
   function dragUi(active) {
     try {
-      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('ksCarouselDrag', !!active);
+      if (window.kiosk_geckoview && window.kiosk_geckoview.callHandler) {
+        window.kiosk_geckoview.callHandler('ksCarouselDrag', !!active);
       }
     } catch (_) {}
   }
