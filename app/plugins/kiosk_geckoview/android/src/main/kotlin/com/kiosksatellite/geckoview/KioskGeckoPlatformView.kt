@@ -40,6 +40,7 @@ class KioskGeckoPlatformView(
                 hasUserGesture: Boolean,
             ) {
                 if (url.isNullOrEmpty()) return
+                if (isSyntheticJavascriptUrl(url)) return
                 currentUrl = url
                 emitEvent(
                     "locationChanged",
@@ -65,10 +66,12 @@ class KioskGeckoPlatformView(
         }
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
+                if (isSyntheticJavascriptUrl(url)) return
                 currentUrl = url
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
+                if (isSyntheticJavascriptUrl(currentUrl)) return
                 emitEvent(
                     "pageLoaded",
                     mapOf("url" to currentUrl, "success" to success),
@@ -146,6 +149,11 @@ class KioskGeckoPlatformView(
         }
         session.open(runtime)
         geckoView.setSession(session)
+        geckoView.isFocusable = true
+        geckoView.isFocusableInTouchMode = true
+        geckoView.requestFocus()
+        session.setActive(true)
+        session.setFocused(true)
         if (!initialUrl.isNullOrBlank()) {
             session.loadUri(initialUrl)
         }
@@ -196,11 +204,16 @@ class KioskGeckoPlatformView(
 
             "pause" -> {
                 geckoView.visibility = View.INVISIBLE
+                session.setFocused(false)
+                session.setActive(false)
                 result.success(null)
             }
 
             "resume" -> {
                 geckoView.visibility = View.VISIBLE
+                geckoView.requestFocus()
+                session.setActive(true)
+                session.setFocused(true)
                 result.success(null)
             }
 
@@ -261,6 +274,11 @@ class KioskGeckoPlatformView(
 
     private fun runJavascript(source: String) {
         session.loadUri("javascript:" + Uri.encode(source))
+    }
+
+    private fun isSyntheticJavascriptUrl(url: String?): Boolean {
+        if (url == null) return false
+        return url.startsWith("javascript:", ignoreCase = true)
     }
 
     private fun emitEvent(name: String, payload: Map<String, Any?>) {
