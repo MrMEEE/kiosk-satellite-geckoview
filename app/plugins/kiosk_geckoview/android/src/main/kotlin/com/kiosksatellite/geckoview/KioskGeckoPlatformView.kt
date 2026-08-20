@@ -29,6 +29,7 @@ class KioskGeckoPlatformView(
     private val jsHandlers = HashSet<String>()
     private var currentUrl: String? = initialUrl
     private var canNavigateBack: Boolean = false
+    private var syntheticJsPageStopsPending: Int = 0
 
     init {
         channel.setMethodCallHandler(this)
@@ -67,10 +68,16 @@ class KioskGeckoPlatformView(
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 if (isSyntheticJavascriptUrl(url)) return
+                // Any real navigation invalidates stale synthetic suppression.
+                syntheticJsPageStopsPending = 0
                 currentUrl = url
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
+                if (syntheticJsPageStopsPending > 0) {
+                    syntheticJsPageStopsPending--
+                    return
+                }
                 if (isSyntheticJavascriptUrl(currentUrl)) return
                 emitEvent(
                     "pageLoaded",
@@ -173,17 +180,20 @@ class KioskGeckoPlatformView(
                 if (url.isNullOrBlank()) {
                     result.error("invalid_url", "url is required", null)
                 } else {
+                    syntheticJsPageStopsPending = 0
                     session.loadUri(url)
                     result.success(null)
                 }
             }
 
             "reload" -> {
+                syntheticJsPageStopsPending = 0
                 session.reload()
                 result.success(null)
             }
 
             "goBack" -> {
+                syntheticJsPageStopsPending = 0
                 session.goBack()
                 result.success(null)
             }
@@ -278,6 +288,7 @@ class KioskGeckoPlatformView(
         // (for example "other"), so force an undefined result to keep the
         // current page intact.
         val wrapped = "(function(){\n$source\n})();void(0);"
+        syntheticJsPageStopsPending++
         session.loadUri("javascript:" + Uri.encode(wrapped))
     }
 
