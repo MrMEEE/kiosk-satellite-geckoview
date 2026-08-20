@@ -43,8 +43,24 @@ jobs:
         run: |
           # printf avoids shell-added newline quirks when decoding secrets.
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
-          # Default to JKS unless explicitly overridden (e.g. PKCS12).
-          STORE_TYPE="${KEYSTORE_TYPE:-JKS}"
+          # Auto-detect store type unless explicitly provided.
+          STORE_TYPE="${KEYSTORE_TYPE:-}"
+          if [[ -z "$STORE_TYPE" ]]; then
+            if keytool -list -keystore android/app/upload-keystore.jks -storetype JKS -storepass "$STORE_PASSWORD" >/dev/null 2>&1; then
+              STORE_TYPE="JKS"
+            elif keytool -list -keystore android/app/upload-keystore.jks -storetype PKCS12 -storepass "$STORE_PASSWORD" >/dev/null 2>&1; then
+              STORE_TYPE="PKCS12"
+            else
+              echo "Keystore could not be opened as JKS or PKCS12. Check ANDROID_KEYSTORE_BASE64 and ANDROID_STORE_PASSWORD." >&2
+              exit 1
+            fi
+          fi
+          # Verify that alias exists before Gradle runs; this gives a clearer error.
+          keytool -list \
+            -keystore android/app/upload-keystore.jks \
+            -storetype "$STORE_TYPE" \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
           cat > android/key.properties <<EOF
           storePassword=$STORE_PASSWORD
           keyPassword=$KEY_PASSWORD
