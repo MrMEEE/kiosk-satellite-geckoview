@@ -273,7 +273,12 @@ class KioskGeckoPlatformView(
     }
 
     private fun runJavascript(source: String) {
-        session.loadUri("javascript:" + Uri.encode(source))
+        // javascript: navigations replace the current document when the
+        // evaluated script returns a string. Many probes return strings
+        // (for example "other"), so force an undefined result to keep the
+        // current page intact.
+        val wrapped = "(function(){\n$source\n})();void(0);"
+        session.loadUri("javascript:" + Uri.encode(wrapped))
     }
 
     private fun isSyntheticJavascriptUrl(url: String?): Boolean {
