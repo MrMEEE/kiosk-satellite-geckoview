@@ -4074,6 +4074,7 @@ class _DashboardPickerCard extends StatefulWidget {
 
 class _DashboardPickerCardState extends State<_DashboardPickerCard> {
   late Future<List<Map<String, Object?>>?> _dashboards;
+  late Future<List<Map<String, Object?>>?> _apps;
 
   // Views of the currently selected dashboard, loaded lazily: listing every
   // sub-view of every dashboard would be an unusable wall, so only the chosen
@@ -4090,6 +4091,7 @@ class _DashboardPickerCardState extends State<_DashboardPickerCard> {
   void initState() {
     super.initState();
     _dashboards = c.homeAssistant.listDashboards();
+    _apps = c.homeAssistant.listApps();
   }
 
   /// The selected dashboard's url_path, matched against the stored start URL
@@ -4100,6 +4102,19 @@ class _DashboardPickerCardState extends State<_DashboardPickerCard> {
       final url = '$_base/${d['url_path']}';
       if (current == url || current.startsWith('$url/')) {
         return '${d['url_path']}';
+      }
+    }
+    return null;
+  }
+
+  /// The selected Home Assistant sidebar app's url_path, matched against the
+  /// stored start URL by prefix.
+  String? _selectedApp(List<Map<String, Object?>> apps) {
+    final current = c.settings.get(startUrl);
+    for (final a in apps) {
+      final url = '$_base/${a['url_path']}';
+      if (current == url || current.startsWith('$url/')) {
+        return '${a['url_path']}';
       }
     }
     return null;
@@ -4137,6 +4152,9 @@ class _DashboardPickerCardState extends State<_DashboardPickerCard> {
     }
     await _apply(urlPath, route);
   }
+
+  /// Select an app page: no per-view picker, just the page path.
+  Future<void> _pickApp(String urlPath) => _apply(urlPath, '');
 
   /// The "Change view" popup: the dashboard's views as a radio list.
   Future<void> _changeView(String urlPath) async {
@@ -4211,6 +4229,43 @@ class _DashboardPickerCardState extends State<_DashboardPickerCard> {
                 '${d['title'] ?? d['url_path']}',
                 selectedDash,
               ),
+            FutureBuilder<List<Map<String, Object?>>?>(
+              future: _apps,
+              builder: (context, appSnapshot) {
+                if (appSnapshot.connectionState != ConnectionState.done) {
+                  return const ListTile(
+                    title: Text('Loading apps…'),
+                    trailing: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    ),
+                  );
+                }
+                final apps = appSnapshot.data ?? const [];
+                if (apps.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                final selectedApp = _selectedApp(apps);
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Divider(height: 1),
+                    const ListTile(
+                      title: Text('Apps'),
+                      subtitle: Text('Open a Home Assistant sidebar app page.'),
+                    ),
+                    for (final a in apps)
+                      _appRow(
+                        context,
+                        '${a['url_path']}',
+                        '${a['title'] ?? a['url_path']}',
+                        selectedApp,
+                      ),
+                  ],
+                );
+              },
+            ),
           ],
         );
       },
@@ -4246,6 +4301,25 @@ class _DashboardPickerCardState extends State<_DashboardPickerCard> {
             )
           : null,
       onTap: selected ? null : () => _pickDashboard(urlPath),
+    );
+  }
+
+  Widget _appRow(
+    BuildContext context,
+    String urlPath,
+    String title,
+    String? selectedApp,
+  ) {
+    final theme = Theme.of(context);
+    final selected = selectedApp == urlPath;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? theme.colorScheme.primary : null,
+      ),
+      title: Text(title),
+      subtitle: Text(urlPath),
+      onTap: selected ? null : () => _pickApp(urlPath),
     );
   }
 }

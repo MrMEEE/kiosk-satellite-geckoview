@@ -2110,7 +2110,19 @@ $('#refreshShot').addEventListener('click', loadScreenshot);
 async function loadScreenshot() {
   try {
     const res = await api('/api/screenshot');
+    if (!res.ok) {
+      const wrap = $('#shotWrap');
+      wrap.classList.remove('free');
+      wrap.innerHTML = '<span class="placeholder">Screenshot unavailable</span>';
+      return;
+    }
     const blob = await res.blob();
+    if (!blob || blob.size === 0) {
+      const wrap = $('#shotWrap');
+      wrap.classList.remove('free');
+      wrap.innerHTML = '<span class="placeholder">No screenshot</span>';
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const wrap = $('#shotWrap');
     let img = wrap.querySelector('img');
@@ -4937,7 +4949,13 @@ async function loadSettings() {
       vbtn.disabled = true; vbtn.textContent = 'Checking\u2026';
       const out = await (await api('/api/commands/haCheckConnection', { method: 'POST', body: '{}' })).json().catch(() => ({}));
       vbtn.disabled = false; vbtn.textContent = 'Validate';
-      if (out.ok) { state.dashboardsCache = null; await loadSettings(); await loadWakeWord(); loadViewJump(); }
+      if (out.ok) {
+        state.dashboardsCache = null;
+        state.appsCache = null;
+        await loadSettings();
+        await loadWakeWord();
+        loadViewJump();
+      }
       else vdesc.textContent = out.error || 'Could not connect.';
     });
 
@@ -4945,6 +4963,16 @@ async function loadSettings() {
       vdesc.textContent = 'Not validated yet. The settings below unlock once the connection checks out.';
     } else {
       vdesc.textContent = 'Connected.';
+      const rawBase = (byKey['ha.url']?.value || '').trim().replace(/\/$/, '');
+      const current = byKey['browser.start_url']?.value || '';
+      const applyStart = async (url) => {
+        await api('/api/settings', { method: 'PATCH',
+          body: JSON.stringify({ 'browser.start_url': url }) });
+        await api('/api/commands/loadUrl', { method: 'POST',
+          body: JSON.stringify({ url }) });
+        await loadSettings();
+      };
+
       // Dashboard picker: what the kiosk shows. Radio rows; picking one sets
       // the start URL and navigates the device right away. The kiosk lands on
       // a single view, so the selected dashboard's row shows its chosen view
@@ -4969,8 +4997,6 @@ async function loadSettings() {
         }
         const dashboards = state.dashboardsCache;
         dashList = dashboards;
-        const rawBase = (byKey['ha.url']?.value || '').trim().replace(/\/$/, '');
-        const current = byKey['browser.start_url']?.value || '';
         // Which dashboard + view route the stored start URL points at.
         let selDash = null, selRoute = '';
         for (const d of dashboards) {
@@ -4980,13 +5006,6 @@ async function loadSettings() {
             selDash = d.url_path; selRoute = current.slice(url.length + 1);
           }
         }
-        const applyStart = async (url) => {
-          await api('/api/settings', { method: 'PATCH',
-            body: JSON.stringify({ 'browser.start_url': url }) });
-          await api('/api/commands/loadUrl', { method: 'POST',
-            body: JSON.stringify({ url }) });
-          await loadSettings();
-        };
         for (const d of dashboards) {
           const selected = selDash === d.url_path;
           const sub = selected ? viewPath(d.url_path, selRoute) : d.url_path;
@@ -5022,6 +5041,44 @@ async function loadSettings() {
       } catch (_) {
         dcard.appendChild(readOnlyRow('Could not list dashboards', '', ''));
       }
+
+      // Sidebar apps picker: same behavior as dashboards (set start URL and
+      // navigate now), but without a per-view route chooser.
+      const ah = document.createElement('h2');
+      ah.className = 'card-title';
+      ah.textContent = 'Apps';
+      root.appendChild(ah);
+      const acard = document.createElement('div');
+      acard.className = 'card';
+      root.appendChild(acard);
+      try {
+        if (!state.appsCache) {
+          state.appsCache = (await (await api('/api/commands/haListApps', { method: 'POST', body: '{}' })).json()).data || [];
+        }
+        const apps = state.appsCache;
+        const rawBase = (byKey['ha.url']?.value || '').trim().replace(/\/$/, '');
+        const current = byKey['browser.start_url']?.value || '';
+        let selApp = null;
+        for (const a of apps) {
+          const url = `${rawBase}/${a.url_path}`;
+          if (current === url || current.startsWith(url + '/')) {
+            selApp = a.url_path;
+            break;
+          }
+        }
+        for (const a of apps) {
+          const selected = selApp === a.url_path;
+          const row = radioRow(a.title || a.url_path, a.url_path, selected, async () => {
+            if (selected) return;
+            await applyStart(`${rawBase}/${a.url_path}`);
+          });
+          acard.appendChild(row);
+        }
+        if (!apps.length) acard.appendChild(readOnlyRow('No sidebar apps found', '', ''));
+      } catch (_) {
+        acard.appendChild(readOnlyRow('Could not list sidebar apps', '', ''));
+      }
+
       // The rest of the Home Assistant settings, then Voice Satellite,
       // through the same section-aware renderer as every other tab. The
       // rotation group is hand-built below instead: its dashboard list

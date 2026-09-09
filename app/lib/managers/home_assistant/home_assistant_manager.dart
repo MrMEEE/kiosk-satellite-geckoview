@@ -235,6 +235,18 @@ class HomeAssistantManager extends Manager {
       )
       ..register(
         Command(
+          name: 'haListApps',
+          description: 'List Home Assistant sidebar apps',
+          handler: (_) async {
+            final apps = await listApps();
+            return apps == null
+                ? const CommandResult.fail('could not list apps')
+                : CommandResult.ok(apps);
+          },
+        ),
+      )
+      ..register(
+        Command(
           name: 'haListDashboardViews',
           description: "One dashboard's views, for the rotation picker",
           params: const {'url_path': "the dashboard's url_path"},
@@ -1605,6 +1617,18 @@ class HomeAssistantManager extends Manager {
     }
   }
 
+  /// The navigable non-dashboard panels from the page's `hass.panels`: what
+  /// Home Assistant itself shows in the sidebar as apps (Logbook, Media,
+  /// HACS, custom panels, ...). Null when hass is not up.
+  Future<List<Map<String, Object?>>?> listApps() async {
+    if (!configured) return null;
+    final page = await _appsFromPage();
+    if (page != null && page.isNotEmpty) return page;
+    final ws = await _appsFromWs();
+    if (ws != null) return ws;
+    return page;
+  }
+
   /// The navigable dashboards from the page's `hass.panels`: every Lovelace
   /// dashboard plus the auto "Overview" default (panel component `home`),
   /// each with the url the sidebar navigates to. Null when hass is not up.
@@ -1659,6 +1683,75 @@ class HomeAssistantManager extends Manager {
         for (final d in decoded.cast<Map>())
           {'url_path': d['url_path'], 'title': d['title']},
       ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The navigable sidebar apps from `hass.panels`, excluding dashboards.
+  /// Returns `[{url_path, title}]` in Home Assistant's registration order.
+  Future<List<Map<String, Object?>>?> _appsFromPage() async {
+    const js = r'''
+(function () {
+  try {
+    var el = document.querySelector('home-assistant');
+    var hass = el && el.hass;
+    if (!hass || !hass.panels) return 'null';
+    var out = [];
+    Object.keys(hass.panels).forEach(function (k) {
+      var p = hass.panels[k];
+      if (!p) return;
+      var path = (typeof p.url_path === 'string' && p.url_path.trim())
+        ? p.url_path.trim()
+        : (typeof k === 'string' ? k.trim() : '');
+      if (!path) return;
+      var comp = p.component_name || '';
+      if (comp === 'lovelace' || comp === 'home' || path === 'lovelace') return;
+      var title = p.sidebar_title || p.title || path;
+      out.push({ url_path: path, title: title });
+    });
+    return JSON.stringify(out);
+  } catch (e) {
+    return 'null';
+  }
+})()
+''';
+    try {
+      final res = await commands.execute('evalJs', {'code': js});
+      if (!res.ok) return null;
+      final decoded = jsonDecode(res.data as String);
+      if (decoded is! List) return null;
+      return [
+        for (final d in decoded.cast<Map>())
+          {'url_path': d['url_path'], 'title': d['title']},
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fallback app list from websocket panel metadata for frontends where
+  /// `hass.panels` is incomplete at the moment we query the page.
+  Future<List<Map<String, Object?>>?> _appsFromWs() async {
+    try {
+      final result = await _wsCommand({'type': 'get_panels'});
+      if (result is! Map) return null;
+      final out = <Map<String, Object?>>[];
+      for (final entry in result.entries) {
+        final key = '${entry.key}'.trim();
+        final panel = entry.value;
+        if (panel is! Map) continue;
+        final comp = '${panel['component_name'] ?? ''}';
+        final rawPath = '${panel['url_path'] ?? ''}'.trim();
+        final path = rawPath.isNotEmpty ? rawPath : key;
+        if (path.isEmpty) continue;
+        if (comp == 'lovelace' || comp == 'home' || path == 'lovelace') {
+          continue;
+        }
+        final title = '${panel['sidebar_title'] ?? panel['title'] ?? path}';
+        out.add({'url_path': path, 'title': title});
+      }
+      return out;
     } catch (_) {
       return null;
     }
