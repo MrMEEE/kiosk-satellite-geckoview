@@ -137,8 +137,10 @@ void main() {
       );
     });
 
-    test('does nothing on a page that never got the script', () {
-      expect(kioskModeApplyJs(apply: true), startsWith('if (window.'));
+    test('bootstraps itself on a page that never got the script', () {
+      final js = kioskModeApplyJs(apply: true);
+      expect(js, startsWith('if (!window.__ksKioskApply)'));
+      expect(js, contains('window.__ksKioskApply(true, true, true)'));
     });
 
     test('hides by tag name, not by tree position', () {
@@ -146,7 +148,7 @@ void main() {
       // stable part, and losing this is how kiosk mode silently stops
       // working on an HA upgrade.
       for (final tag in ['home-assistant-main', 'ha-drawer', 'hui-root']) {
-        expect(kioskModeScript, contains("'$tag'"));
+        expect(kioskModeScript, contains(tag));
       }
     });
 

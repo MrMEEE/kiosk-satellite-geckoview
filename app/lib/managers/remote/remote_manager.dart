@@ -12,6 +12,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../core/events.dart';
 import '../../core/manager.dart';
+import '../home_assistant/kiosk_mode.dart';
 import '../settings/definitions.dart' as defs;
 import '../settings/settings_manager.dart';
 import 'auth.dart';
@@ -431,11 +432,39 @@ class RemoteManager extends Manager {
     final body = await _body(request);
     if (body == null) return _json(400, {'error': 'invalid JSON'});
     final rejected = <String>[];
+    var kioskTouched = false;
     for (final entry in body.entries) {
       if (!await _settings.setFromJson(entry.key, entry.value)) {
         rejected.add(entry.key);
+      } else if (entry.key == defs.haKioskMode.key ||
+          entry.key == defs.haKioskHideHeader.key ||
+          entry.key == defs.haKioskHideSidebar.key) {
+        kioskTouched = true;
       }
     }
+
+    // Remote toggles for HA kiosk settings must take effect on the live page
+    // immediately, even if the page missed an earlier script injection edge.
+    if (kioskTouched) {
+      final code = kioskModeApplyJs(
+        apply: _settings.get(defs.haKioskMode),
+        hideHeader: _settings.get(defs.haKioskHideHeader),
+        hideSidebar: _settings.get(defs.haKioskHideSidebar),
+      );
+      final applied = await commands.execute('evalJs', {'code': code});
+      if (!applied.ok) {
+        log.warn(name, 'remote kiosk apply failed: ${applied.error}');
+      } else {
+        log.info(
+          name,
+          'remote kiosk apply ok '
+          '(mode=${_settings.get(defs.haKioskMode)} '
+          'header=${_settings.get(defs.haKioskHideHeader)} '
+          'sidebar=${_settings.get(defs.haKioskHideSidebar)})',
+        );
+      }
+    }
+
     return _json(200, {'ok': rejected.isEmpty, 'rejected': rejected});
   }
 

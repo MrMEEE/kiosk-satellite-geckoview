@@ -683,12 +683,52 @@ class _KioskScreenState extends State<KioskScreen>
 
   /// Apply or tear down kiosk mode against the current page.
   Future<void> _applyKioskMode() async {
+    final apply = c.settings.get(defs.haKioskMode);
+    final hideHeader = c.settings.get(defs.haKioskHideHeader);
+    final hideSidebar = c.settings.get(defs.haKioskHideSidebar);
     await c.browser.runJs(
       kioskModeApplyJs(
-        apply: c.settings.get(defs.haKioskMode),
-        hideHeader: c.settings.get(defs.haKioskHideHeader),
-        hideSidebar: c.settings.get(defs.haKioskHideSidebar),
+        apply: apply,
+        hideHeader: hideHeader,
+        hideSidebar: hideSidebar,
       ),
+    );
+    final diag = await c.browser.eval('''
+      (function () {
+        var out = {
+          hasApply: typeof window.__ksKioskApply === 'function',
+          enabled: !!(window.__ksKiosk && window.__ksKiosk.on),
+          header: !!(window.__ksKiosk && window.__ksKiosk.header),
+          sidebar: !!(window.__ksKiosk && window.__ksKiosk.sidebar),
+          styles: 0,
+          origin: location.origin,
+          href: location.href
+        };
+        try {
+          if (document.getElementById('ks-kiosk-mode')) out.styles++;
+          var seen = [];
+          var queue = [document];
+          while (queue.length) {
+            var root = queue.shift();
+            var nodes = [];
+            try { nodes = root.querySelectorAll('*'); } catch (_) { continue; }
+            for (var i = 0; i < nodes.length; i++) {
+              var sr = nodes[i].shadowRoot;
+              if (!sr || seen.indexOf(sr) >= 0) continue;
+              seen.push(sr);
+              queue.push(sr);
+              try {
+                if (sr.getElementById && sr.getElementById('ks-kiosk-mode')) out.styles++;
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        return JSON.stringify(out);
+      })();
+    ''');
+    c.log.info(
+      'kiosk',
+      'ha-kiosk apply=$apply header=$hideHeader sidebar=$hideSidebar diag=${diag ?? 'null'}',
     );
   }
 

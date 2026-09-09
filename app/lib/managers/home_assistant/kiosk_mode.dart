@@ -40,15 +40,10 @@ const kioskModeScript = '''
 (function () {
   if (window.__ksKiosk) return;
   var ID = 'ks-kiosk-mode';
-  var S = { on: false, header: true, sidebar: true, roots: [] };
+  var S = { on: false, header: true, sidebar: true };
+  var ROOTS = [document];
+  var ROOT_SEEN = [];
   window.__ksKiosk = S;
-
-  // The elements worth styling, by tag. Anything else that grows a shadow
-  // root is none of our business and is not even remembered.
-  function target(tag) {
-    return tag === 'home-assistant-main' || tag === 'ha-drawer' ||
-      tag === 'hui-root';
-  }
 
   // Outside the dashboard's own WebView the script is handed the one origin
   // it may touch, so a page that navigates on from Home Assistant to
@@ -59,110 +54,116 @@ const kioskModeScript = '''
     return !o || !o.length || o.indexOf(location.origin) >= 0;
   }
 
-  function css(tag) {
+  function css() {
     if (!S.on || !allowedHere()) return '';
-    if (tag === 'home-assistant-main') {
-      return S.sidebar
-        ? 'ha-drawer{--mdc-drawer-width:0px!important;}' +
-          'ha-sidebar{display:none!important;}'
-        : '';
+    var out = '';
+    if (S.header) {
+      // Header variants across HA frontend generations.
+      out += 'app-header,ch-header,ha-top-app-bar-fixed,hui-top-app-bar-fixed,' +
+        'hui-view-header,.header,.toolbar{display:none!important;max-height:0!important;min-height:0!important;}';
+      // Keep panel cards full-height when the header is gone.
+      out += '#view,hui-view,.view{padding-top:calc(var(--safe-area-inset-top,0px) + ' +
+        'var(--view-container-padding-top,0px))!important;min-height:100vh!important;' +
+        '--kiosk-header-height:0px!important;}';
     }
-    if (tag === 'ha-drawer') {
-      // The drawer owns the sidebar's container and the content offset that
-      // makes room for it; both live in its own shadow root, out of reach of
-      // the styles above.
-      return S.sidebar
-        ? '.mdc-drawer,.sidebar-shell{display:none!important;width:0!important;' +
-          'min-width:0!important;border:0!important;}' +
-          '.mdc-drawer-scrim{display:none!important;}' +
-          '.mdc-drawer-app-content,.app-content{margin-left:0!important;' +
-          'margin-inline-start:0!important;padding-left:0!important;' +
-          'padding-inline-start:0!important;}'
-        : '';
+    if (S.sidebar) {
+      // Sidebar/drawer variants across HA frontend generations.
+      out += 'ha-sidebar,.mdc-drawer,.sidebar,.sidebar-shell,[slot="drawer"],[part="drawer"]{' +
+        'display:none!important;width:0!important;min-width:0!important;max-width:0!important;border:0!important;}';
+      // Newer HA and custom-sidebar hosts seen in the field.
+      out += 'ha-navigation-sidebar,ha-sidebar-navigation,ha-drawer-sidebar{' +
+        'display:none!important;width:0!important;min-width:0!important;max-width:0!important;border:0!important;}';
+      out += '.mdc-drawer-scrim{display:none!important;}';
+      out += '.mdc-drawer-app-content,.app-content,main{margin-left:0!important;margin-inline-start:0!important;' +
+        'padding-left:0!important;padding-inline-start:0!important;}';
+      out += 'home-assistant-main{margin-left:0!important;margin-inline-start:0!important;' +
+        'padding-left:0!important;padding-inline-start:0!important;}';
+      // Host-level vars are inherited into shadow trees, including closed ones.
+      out += ':root,html,body,home-assistant,home-assistant-main,hui-root,partial-panel-resolver{' +
+        '--mdc-drawer-width:0px!important;--drawer-width:0px!important;--app-drawer-width:0px!important;}';
+      out += 'home-assistant-main,ha-drawer,hui-root{' +
+        '--mdc-drawer-width:0px!important;--drawer-width:0px!important;--app-drawer-width:0px!important;}';
     }
-    if (tag === 'hui-root') {
-      // Panel cards size themselves against the header through
-      // var(--kiosk-header-height, var(--header-height)), the contract the
-      // kiosk-mode resource established (the advanced camera card among
-      // them), so hiding the header must also declare the kiosk height as
-      // zero or a panel card ends a header short (#232). The padding keeps
-      // the safe-area share the header's offset used to carry.
-      return S.header
-        ? '.header,.toolbar,app-header,ch-header{display:none!important;}' +
-          '#view,hui-view{padding-top:calc(var(--safe-area-inset-top,0px) + ' +
-          'var(--view-container-padding-top,0px))!important;' +
-          'min-height:100vh!important;--kiosk-header-height:0px;}'
-        : '';
+    return out;
+  }
+
+  function addRoot(root) {
+    if (!root) return;
+    if (ROOT_SEEN.indexOf(root) >= 0) return;
+    ROOT_SEEN.push(root);
+    ROOTS.push(root);
+  }
+
+  function seedOpenRoots() {
+    var q = [document];
+    while (q.length) {
+      var root = q.shift();
+      if (!root) continue;
+      var nodes;
+      try { nodes = root.querySelectorAll('*'); } catch (e) { continue; }
+      for (var i = 0; i < nodes.length; i++) {
+        var sr = nodes[i].shadowRoot;
+        if (!sr) continue;
+        if (ROOT_SEEN.indexOf(sr) >= 0) continue;
+        addRoot(sr);
+        q.push(sr);
+      }
     }
-    return '';
+  }
+
+  function hookAttachShadow() {
+    if (window.__ksKioskAttachShadowHooked) return;
+    var proto = window.Element && window.Element.prototype;
+    if (!proto || !proto.attachShadow) return;
+    var orig = proto.attachShadow;
+    proto.attachShadow = function (init) {
+      var sr = orig.call(this, init);
+      try {
+        addRoot(sr);
+        style(sr);
+      } catch (e) {}
+      return sr;
+    };
+    window.__ksKioskAttachShadowHooked = true;
   }
 
   function style(root) {
-    var host = root && root.host;
-    if (!host) return;
-    var rules = css((host.tagName || '').toLowerCase());
+    if (!root) return;
+    var rules = css();
     var el = root.getElementById ? root.getElementById(ID) : null;
     if (!rules) { if (el) el.remove(); return; }
+    var host = root;
+    if (root.nodeType === 9) {
+      host = root.head || root.documentElement;
+    }
+    if (!host || !host.appendChild) return;
     if (!el) {
       el = document.createElement('style');
       el.id = ID;
-      root.appendChild(el);
+      try { host.appendChild(el); } catch (e) { return; }
     }
     if (el.textContent !== rules) el.textContent = rules;
   }
 
-  // A drawer that is told to open anyway (the edge swipe, the menu button on
-  // a release that does not route through the toggle event) is closed again
-  // before it can show. One observer per drawer, for the life of that drawer.
-  function guard(host) {
-    if (host.__ksKioskGuard) return;
-    host.__ksKioskGuard = true;
-    try {
-      new MutationObserver(function () {
-        if (S.on && S.sidebar && allowedHere() && host.hasAttribute('open')) {
-          host.removeAttribute('open');
-        }
-      }).observe(host, { attributes: true, attributeFilter: ['open'] });
-    } catch (e) {}
-  }
-
-  function track(root) {
-    var host = root && root.host;
-    if (!host) return;
-    var tag = (host.tagName || '').toLowerCase();
-    if (!target(tag)) return;
-    if (S.roots.indexOf(root) < 0) S.roots.push(root);
-    if (tag === 'ha-drawer') guard(host);
-    style(root);
-  }
-
-  // Catch every shadow root as it is born. Registered before the frontend's
-  // own code runs, so nothing that matters is created before this is in
-  // place.
-  var attach = Element.prototype.attachShadow;
-  if (attach) {
-    Element.prototype.attachShadow = function (init) {
-      var root = attach.call(this, init);
-      try { track(root); } catch (e) {}
-      return root;
-    };
-  }
-
-  // Roots that already exist: only relevant when this script reaches a page
-  // that was already up (an app update, a WebView that outlived a reload).
-  // Bounded walk, and it only has to find the three tags above.
-  function sweep(root, depth) {
-    if (!root || depth > 12) return;
-    var nodes;
-    try { nodes = root.querySelectorAll('*'); } catch (e) { return; }
-    for (var i = 0; i < nodes.length; i++) {
-      var sr = nodes[i].shadowRoot;
-      if (sr) { track(sr); sweep(sr, depth + 1); }
+  function closeDrawers() {
+    if (!(S.on && S.sidebar && allowedHere())) return;
+    for (var r = 0; r < ROOTS.length; r++) {
+      var root = ROOTS[r];
+      if (!root || !root.querySelectorAll) continue;
+      var all = [];
+      try { all = root.querySelectorAll('ha-drawer'); } catch (e) { continue; }
+      for (var i = 0; i < all.length; i++) {
+        try { all[i].removeAttribute('open'); } catch (e) {}
+      }
     }
   }
 
-  function restyle() {
-    for (var i = 0; i < S.roots.length; i++) style(S.roots[i]);
+  function applyNow() {
+    seedOpenRoots();
+    for (var i = 0; i < ROOTS.length; i++) {
+      try { style(ROOTS[i]); } catch (e) {}
+    }
+    closeDrawers();
   }
 
   // The menu button and the edge swipe both ask the app to open the drawer
@@ -178,15 +179,21 @@ const kioskModeScript = '''
     S.on = !!on;
     S.header = !!header;
     S.sidebar = !!sidebar;
-    sweep(document, 0);
-    restyle();
+    applyNow();
+    // Home Assistant mounts pieces asynchronously; re-assert briefly.
+    setTimeout(applyNow, 60);
+    setTimeout(applyNow, 180);
+    setTimeout(applyNow, 500);
   };
 
-  // A navigation can mount a panel whose root was created before its
-  // ancestors were styled; re-asserting costs a handful of string compares.
+  // A navigation can mount UI after the URL changed.
   window.addEventListener('location-changed', function () {
-    setTimeout(function () { sweep(document, 0); restyle(); }, 80);
+    setTimeout(applyNow, 80);
+    setTimeout(applyNow, 260);
   });
+
+  hookAttachShadow();
+  seedOpenRoots();
 })();
 ''';
 
@@ -197,6 +204,9 @@ String kioskModeApplyJs({
   bool hideHeader = true,
   bool hideSidebar = true,
 }) =>
+    'if (!window.__ksKioskApply) {\n'
+    '$kioskModeScript\n'
+    '}\n'
     'if (window.__ksKioskApply) window.__ksKioskApply('
     '$apply, $hideHeader, $hideSidebar);';
 
