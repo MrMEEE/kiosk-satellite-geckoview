@@ -381,6 +381,73 @@ class _InAppWebViewState extends State<InAppWebView> {
 	InAppWebViewController? _controller;
 	KioskGeckoViewController? _rawController;
 
+	static const String _geckoConsoleBridgeSource = '''
+(function(){
+	if (window.__ksConsoleBridgeInstalled) return;
+	window.__ksConsoleBridgeInstalled = true;
+	var PREFIX = '__KS_CONSOLE__';
+
+	function toText(value) {
+		try {
+			if (typeof value === 'string') return value;
+			if (value instanceof Error) return value.stack || value.message || String(value);
+			return JSON.stringify(value);
+		} catch (_) {
+			try { return String(value); } catch (_) { return '[unprintable]'; }
+		}
+	}
+
+	function send(level, args, source, line, column) {
+		var message = '';
+		try {
+			message = Array.prototype.map.call(args || [], toText).join(' ');
+		} catch (_) {
+			message = '[console serialization failed]';
+		}
+		var payload = {
+			level: level || 'log',
+			message: message,
+			source: source || '',
+			line: line || 0,
+			column: column || 0
+		};
+		try {
+			prompt(PREFIX + JSON.stringify(payload), '');
+		} catch (_) {}
+	}
+
+	var levels = ['log', 'debug', 'warn', 'error', 'info'];
+	var c = window.console = window.console || {};
+	for (var i = 0; i < levels.length; i++) {
+		(function(level){
+			var original = typeof c[level] === 'function' ? c[level].bind(c) : null;
+			c[level] = function(){
+				try { send(level, arguments); } catch (_) {}
+				if (original) {
+					try { return original.apply(c, arguments); } catch (_) { return undefined; }
+				}
+				return undefined;
+			};
+		})(levels[i]);
+	}
+
+	window.addEventListener('error', function(evt){
+		var message = evt && evt.message ? evt.message : 'Unhandled error';
+		var stack = evt && evt.error && evt.error.stack ? ('\\n' + evt.error.stack) : '';
+		send('error', [message + stack], evt && evt.filename, evt && evt.lineno, evt && evt.colno);
+	});
+
+	window.addEventListener('unhandledrejection', function(evt){
+		var reason = evt ? evt.reason : null;
+		var text = '';
+		if (reason && reason.stack) text = String(reason.stack);
+		else if (reason && reason.message) text = String(reason.message);
+		else text = toText(reason);
+		send('error', ['Unhandled promise rejection: ' + text]);
+	});
+})();
+''';
+
 	String? get _initialUrl {
 		if (widget.initialUrlRequest != null) {
 			return widget.initialUrlRequest!.url.toString();
@@ -407,12 +474,42 @@ class _InAppWebViewState extends State<InAppWebView> {
 		_controller = controller;
 		raw.addEventListener('locationChanged', _onLocationChanged);
 		raw.addEventListener('pageLoaded', _onPageLoaded);
+		raw.addEventListener('console', _onConsole);
 		widget.onWebViewCreated?.call(controller);
+		await controller.evaluateJavascript(source: _geckoConsoleBridgeSource);
 		await _injectScripts(UserScriptInjectionTime.AT_DOCUMENT_START);
 		final initial = _initialUrl;
 		if (initial != null) {
 			await controller.loadUrl(urlRequest: URLRequest(url: WebUri(initial)));
 		}
+	}
+
+	void _onConsole(Map<String, Object?> payload) {
+		final controller = _controller;
+		if (controller == null) return;
+		final message = (payload['message'] as String?)?.trim() ?? '';
+		if (message.isEmpty) return;
+		final levelText = ((payload['level'] as String?) ?? 'log').toLowerCase();
+		final source = (payload['source'] as String?) ?? '';
+		final line = (payload['line'] as num?)?.toInt() ?? 0;
+		final column = (payload['column'] as num?)?.toInt() ?? 0;
+
+		final decorated = source.isEmpty
+				? message
+				: '$message ($source${line > 0 ? ':$line' : ''}${column > 0 ? ':$column' : ''})';
+
+		final level = switch (levelText) {
+			'error' => ConsoleMessageLevel.ERROR,
+			'warn' || 'warning' => ConsoleMessageLevel.WARNING,
+			'debug' => ConsoleMessageLevel.DEBUG,
+			'tip' => ConsoleMessageLevel.TIP,
+			_ => ConsoleMessageLevel.LOG,
+		};
+
+		widget.onConsoleMessage?.call(
+			controller,
+			ConsoleMessage(message: decorated, messageLevel: level),
+		);
 	}
 
 	void _onLocationChanged(Map<String, Object?> payload) {
@@ -429,6 +526,12 @@ class _InAppWebViewState extends State<InAppWebView> {
 		final value = payload['url'];
 		if (value is! String || value.isEmpty) return;
 		final uri = WebUri(value);
+		unawaited(controller.evaluateJavascript(source: _geckoConsoleBridgeSource));
+		// Gecko compat cannot register true document-start scripts natively,
+		// so re-inject them on each committed load before document-end scripts.
+		// This keeps always-on runtime hooks (kiosk mode, pull probe, haptics,
+		// ws filters, etc.) present on the actual page document.
+		unawaited(_injectScripts(UserScriptInjectionTime.AT_DOCUMENT_START));
 		unawaited(_injectScripts(UserScriptInjectionTime.AT_DOCUMENT_END));
 		widget.onUpdateVisitedHistory?.call(controller, uri, false);
 		final loadStop = widget.onLoadStop?.call(controller, uri);
@@ -441,6 +544,7 @@ class _InAppWebViewState extends State<InAppWebView> {
 		if (raw != null) {
 			raw.removeEventListener('locationChanged', _onLocationChanged);
 			raw.removeEventListener('pageLoaded', _onPageLoaded);
+			raw.removeEventListener('console', _onConsole);
 		}
 		super.dispose();
 	}

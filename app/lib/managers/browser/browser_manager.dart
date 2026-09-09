@@ -131,7 +131,8 @@ class BrowserManager extends Manager {
     if (controller == null) return;
     try {
       final value = await controller.evaluateJavascript(
-        source: "localStorage.getItem('hassTokens')",
+        source:
+            "try { localStorage.getItem('hassTokens'); } catch (_) { null; }",
       );
       if (value is String && value.trim().isNotEmpty) _haSession = value;
     } catch (_) {
@@ -544,34 +545,35 @@ class BrowserManager extends Manager {
                   await Future<void>.delayed(settle);
                 }
               }
-              // The window, via a GPU blit on a background thread (see
-              // ScreenCapture.kt). The WebView's own capture below draws
-              // the view into a bitmap on the UI thread — with the admin's
-              // auto-refresh ticked that was a visible stutter every few
-              // seconds — and it can only ever show the page, never the
-              // screensaver or menu actually on screen.
+              // Prefer the page capture first: some SurfaceView-backed
+              // engines (notably GeckoView on certain Android 8 tablets)
+              // can return black window-level PixelCopy frames even while
+              // the page is visible and interactive.
+              controller = _controller;
+              if (controller != null) {
+                try {
+                  final bytes = await controller.takeScreenshot(
+                    screenshotConfiguration: ScreenshotConfiguration(
+                      compressFormat: CompressFormat.JPEG,
+                      quality: quality,
+                      snapshotWidth: width > 0 ? width.toDouble() : null,
+                    ),
+                  );
+                  if (bytes != null) {
+                    return CommandResult.ok(base64Encode(bytes));
+                  }
+                } catch (e) {
+                  log.debug(name, 'web capture failed, trying native: $e');
+                }
+              }
+              // Fallback: whole-window capture (menus/screensaver included)
+              // when page capture is unavailable.
               final native = await ScreenCapture.capture(
                 width: width,
                 quality: quality,
               );
               if (native != null) {
                 return CommandResult.ok(base64Encode(native));
-              }
-              // No Activity window (app backgrounded, or Android < 8): the
-              // WebView outlives the Activity, so its page capture still
-              // works.
-              controller = _controller;
-              if (controller != null) {
-                final bytes = await controller.takeScreenshot(
-                  screenshotConfiguration: ScreenshotConfiguration(
-                    compressFormat: CompressFormat.JPEG,
-                    quality: quality,
-                    snapshotWidth: width > 0 ? width.toDouble() : null,
-                  ),
-                );
-                if (bytes != null) {
-                  return CommandResult.ok(base64Encode(bytes));
-                }
               }
               if (attempt < attempts) {
                 await Future<void>.delayed(const Duration(milliseconds: 400));

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -133,12 +135,30 @@ class KioskGeckoView extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return AndroidView(
+    return PlatformViewLink(
       viewType: 'kiosk_satellite/geckoview',
-      creationParams: <String, Object?>{'initialUrl': initialUrl},
-      creationParamsCodec: const StandardMessageCodec(),
-      onPlatformViewCreated: (id) {
-        onCreated?.call(KioskGeckoViewController._(id));
+      surfaceFactory: (context, controller) {
+        return AndroidViewSurface(
+          controller: controller as AndroidViewController,
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        );
+      },
+      onCreatePlatformView: (params) {
+        final controller = PlatformViewsService.initSurfaceAndroidView(
+          id: params.id,
+          viewType: 'kiosk_satellite/geckoview',
+          layoutDirection: TextDirection.ltr,
+          creationParams: <String, Object?>{'initialUrl': initialUrl},
+          creationParamsCodec: const StandardMessageCodec(),
+          onFocus: () => params.onFocusChanged(true),
+        );
+        controller.addOnPlatformViewCreatedListener(params.onPlatformViewCreated);
+        controller.addOnPlatformViewCreatedListener((id) {
+          onCreated?.call(KioskGeckoViewController._(id));
+        });
+        controller.create();
+        return controller;
       },
     );
   }

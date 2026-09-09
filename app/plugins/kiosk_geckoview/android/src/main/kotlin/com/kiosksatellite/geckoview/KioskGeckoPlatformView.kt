@@ -1,19 +1,24 @@
 package com.kiosksatellite.geckoview
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.view.View
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
 import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 
 class KioskGeckoPlatformView(
     context: Context,
@@ -22,10 +27,11 @@ class KioskGeckoPlatformView(
     initialUrl: String?,
 ) : PlatformView, MethodChannel.MethodCallHandler {
     private val bridgePrefix = "__KS_BRIDGE__"
+    private val consolePrefix = "__KS_CONSOLE__"
     private val channel = MethodChannel(messenger, "kiosk_satellite/geckoview_$viewId")
     private val geckoView = GeckoView(context)
     private val runtime = runtime(context)
-    private val session = GeckoSession()
+    private val session = GeckoSession(sessionSettings())
     private val jsHandlers = HashSet<String>()
     private var currentUrl: String? = initialUrl
     private var canNavigateBack: Boolean = false
@@ -115,6 +121,23 @@ class KioskGeckoPlatformView(
                 prompt: GeckoSession.PromptDelegate.TextPrompt,
             ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
                 val message = prompt.message ?: return null
+                if (message.startsWith(consolePrefix)) {
+                    val payloadText = message.removePrefix(consolePrefix)
+                    val payload = runCatching { JSONObject(payloadText) }.getOrNull()
+                    if (payload != null) {
+                        emitEvent(
+                            "console",
+                            mapOf(
+                                "level" to payload.optString("level", "log"),
+                                "message" to payload.optString("message", ""),
+                                "source" to payload.optString("source", ""),
+                                "line" to payload.optInt("line", 0),
+                                "column" to payload.optInt("column", 0),
+                            ),
+                        )
+                    }
+                    return GeckoResult.fromValue(prompt.confirm(""))
+                }
                 if (!message.startsWith(bridgePrefix)) return null
                 val payloadText = message.removePrefix(bridgePrefix)
                 val payload = runCatching { JSONObject(payloadText) }.getOrNull()
@@ -156,8 +179,16 @@ class KioskGeckoPlatformView(
         }
         session.open(runtime)
         geckoView.setSession(session)
+        // Explicitly bind text input to this view; some API 27 devices do
+        // not deliver committed text reliably without an explicit link.
+        session.textInput.setView(geckoView)
         geckoView.isFocusable = true
         geckoView.isFocusableInTouchMode = true
+        geckoView.setOnTouchListener { _, _ ->
+            session.setActive(true)
+            session.setFocused(true)
+            false
+        }
         geckoView.requestFocus()
         session.setActive(true)
         session.setFocused(true)
@@ -222,14 +253,17 @@ class KioskGeckoPlatformView(
             "resume" -> {
                 geckoView.visibility = View.VISIBLE
                 geckoView.requestFocus()
+                session.textInput.setView(geckoView)
                 session.setActive(true)
                 session.setFocused(true)
                 result.success(null)
             }
 
             "takeScreenshot" -> {
-                // Placeholder while Gecko screenshot parity is implemented.
-                result.success(null)
+                val quality = (call.argument<Number>("quality")?.toInt() ?: 80)
+                    .coerceIn(1, 100)
+                val requestedWidth = call.argument<Number>("width")?.toDouble()
+                captureScreenshot(quality, requestedWidth, result)
             }
 
             "registerJsHandler" -> {
@@ -290,6 +324,44 @@ class KioskGeckoPlatformView(
         val wrapped = "(function(){\n$source\n})();void(0);"
         syntheticJsPageStopsPending++
         session.loadUri("javascript:" + Uri.encode(wrapped))
+    }
+
+    private fun captureScreenshot(
+        quality: Int,
+        requestedWidth: Double?,
+        result: MethodChannel.Result,
+    ) {
+        geckoView.capturePixels().accept(
+            { bitmap: Bitmap? ->
+                if (bitmap == null) {
+                    result.success(null)
+                    return@accept
+                }
+                val scaled = maybeScaleBitmap(bitmap, requestedWidth)
+                val out = ByteArrayOutputStream()
+                val ok = scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                if (scaled !== bitmap) scaled.recycle()
+                if (!ok) {
+                    result.success(null)
+                } else {
+                    result.success(out.toByteArray())
+                }
+            },
+            {
+                result.success(null)
+            },
+        )
+    }
+
+    private fun maybeScaleBitmap(bitmap: Bitmap, requestedWidth: Double?): Bitmap {
+        val targetWidth = requestedWidth?.toInt() ?: return bitmap
+        if (targetWidth <= 0 || targetWidth >= bitmap.width || bitmap.width <= 0 || bitmap.height <= 0) {
+            return bitmap
+        }
+        val targetHeight = (bitmap.height.toFloat() * targetWidth.toFloat() / bitmap.width.toFloat())
+            .toInt()
+            .coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
     }
 
     private fun isSyntheticJavascriptUrl(url: String?): Boolean {
@@ -375,6 +447,31 @@ class KioskGeckoPlatformView(
         @Volatile
         private var sharedRuntime: GeckoRuntime? = null
 
+        private fun runtimeSettings(): GeckoRuntimeSettings {
+            val builder = GeckoRuntimeSettings.Builder()
+                .javaScriptEnabled(true)
+                .webFontsEnabled(true)
+                .lowMemoryDetection(true)
+
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O_MR1) {
+                // API 27 devices are resource constrained; keep Gecko in the
+                // app process to avoid extra child-process churn.
+                builder
+                    .fissionEnabled(false)
+                    .isolatedProcessEnabled(false)
+                    .appZygoteProcessEnabled(false)
+            }
+            return builder.build()
+        }
+
+        private fun sessionSettings(): GeckoSessionSettings {
+            return GeckoSessionSettings.Builder()
+                .allowJavascript(true)
+                .useTrackingProtection(false)
+                .suspendMediaWhenInactive(false)
+                .build()
+        }
+
         private fun runtime(context: Context): GeckoRuntime {
             val cached = sharedRuntime
             if (cached != null) return cached
@@ -383,7 +480,7 @@ class KioskGeckoPlatformView(
                 if (existing != null) {
                     existing
                 } else {
-                    GeckoRuntime.create(context.applicationContext).also {
+                    GeckoRuntime.create(context.applicationContext, runtimeSettings()).also {
                         sharedRuntime = it
                     }
                 }
